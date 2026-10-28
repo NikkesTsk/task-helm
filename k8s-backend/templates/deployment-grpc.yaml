@@ -1,0 +1,50 @@
+{{- $env := default "" .Values.ENV_NAME }}
+{{- if (and .Values.HOST .Values.GRPC_DOC (ne $env "prod")) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.APP_NAME }}-grpc-doc
+  labels:
+    app.kubernetes.io/name: {{ .Values.APP_NAME }}-grpc-doc
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.APP_NAME }}-grpc-doc
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.APP_NAME }}-grpc-doc
+      annotations:
+        rollme: "{{ now | unixEpoch }}"
+    spec:
+      imagePullSecrets:
+        - name: registry-creds
+      containers:
+        - name: grpc-doc
+          image: "{{ .Values.IMAGE }}-grpc-docs"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: web
+              containerPort: 80
+          env:
+            - name: REDEPLOY_TOKEN
+              value: "{{ now | unixEpoch }}"
+          volumeMounts:
+            - name: doc-index
+              mountPath: /usr/share/nginx/html/index.tpl.html.bak
+              subPath: index.html
+          resources:
+            requests:
+              cpu: 150m
+              memory: 128Mi
+            limits:
+              cpu: {{ .Values.CPU_LIMIT | default 300 }}m
+              memory: {{ .Values.MEMORY_LIMIT | default 256 }}Mi
+
+      volumes:
+        - name: doc-index
+          configMap:
+            name: {{ .Values.APP_NAME }}-doc-index
+{{- end }}

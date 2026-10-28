@@ -1,0 +1,10 @@
+# Do not commit environment-specific values, credentials, or rendered manifests
+values.yaml
+*.secret.yaml
+*.secrets.yaml
+*.tfstate
+*.tfstate.*
+.env
+.env.*
+!values.example.yaml
+*.tgz

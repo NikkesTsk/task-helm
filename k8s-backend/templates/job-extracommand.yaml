@@ -1,0 +1,53 @@
+{{- if .Values.JOBS }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.APP_NAME }}-extracomands
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-creds
+      containers:
+        - name: {{ .Values.APP_NAME }}-extrajob
+          image: {{ .Values.IMAGE | quote }}
+          imagePullPolicy: IfNotPresent
+          command: ["sh","-lc"]
+          args:
+            - |
+              set -euo pipefail
+              {{- range $name, $cmd := .Values.EXTRA_COMMANDS }}
+              echo ">>> {{ $name }}"
+              {{ $cmd }}
+              {{- end }}
+              echo "All extra commands done."
+
+          env:
+          - name: APP_NAME
+            value: "{{ .Values.APP_NAME }}"
+          - name: APP_PORT
+            value: "8080"
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.ENV_NAME }}-common-secret
+            - secretRef:
+                name: {{ $.Values.APP_NAME }}-secret
+#          volumeMounts:
+#            - name: env-file
+#              mountPath: /secrets/file.env
+#              subPath: file.env
+#      volumes:
+#        - name: env-file
+#          secret:
+#            secretName: {{ .Values.APP_NAME }}-secret
+#            items:
+#              - key: {{ .Values.SECRET_ENV_FILE_KEY | default "file.env" | quote }}
+#                path: file.env
+#                mode: 0440
+{{- end }}

@@ -1,0 +1,27 @@
+# Example only. No real infrastructure identifiers or credentials.
+# Combine with values.main.yaml to preview this chart.
+APP_NAME: example-backend
+ENV_NAME: dev
+IMAGE: ghcr.io/example-org/example-backend:1.0.0
+HOST: backend.example.invalid
+SECRET_LOCATION: apps/dev/example-backend
+VAULT_MOUNT: demo-kv
+VAULT_AUTH_REF: default
+INTERNAL: false
+GRPC_DOC: false
+JOBS: false
+EXTRA_COMMANDS: {}
+PRESTART: {}
+CPU_LIMIT: 500
+MEMORY_LIMIT: 512
+MEMORY_REQUEST: 128
+containerPort: 8080
+backend:
+  service:
+    type: ClusterIP
+    annotations: {}
+  securityContext: {}
+  args: []
+  extraEnvFrom: []
+  extraContainers: []
+  additionalVolumes: []

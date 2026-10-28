@@ -1,0 +1,193 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.APP_NAME }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.APP_NAME }}     # ← должен совпадать с template.metadata.labels
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.APP_NAME }}
+        restartedAt: "{{ now | unixEpoch }}"
+    spec:
+      imagePullSecrets:
+        - name: registry-creds
+      initContainers:
+        - name: db-migrate
+          image: {{ $.Values.IMAGE }}
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.ENV_NAME }}-common-secret
+            - secretRef:
+                name: {{ $.Values.APP_NAME }}-secret
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ -f /app/dbmigrate ]; then
+                echo "Файл найден, запускаю миграции..."
+                /app/dbmigrate up
+              else
+                echo "Файла /app/dbmigrate нет, пропускаю."
+              fi
+      {{- if .Values.PRESTART }}
+        {{- range $name, $cmd := .Values.PRESTART }}
+        - name: prestart-{{ $name }}
+          image: {{ $.Values.IMAGE | quote }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.ENV_NAME }}-common-secret
+            - secretRef:
+                name: {{ $.Values.APP_NAME }}-secret
+          {{- with $.Values.backend.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command: ["sh","-lc"]
+          args:
+            - |
+              set -euo pipefail
+              {{ $cmd }}
+
+          resources:
+            requests:
+              cpu: 150m
+              memory: {{ $.Values.MEMORY_REQUEST | default 128 }}Mi
+            limits:
+              cpu:    {{ $.Values.CPU_LIMIT   | default 500 }}m
+              memory: {{ $.Values.MEMORY_LIMIT| default 1024 }}Mi
+#          volumeMounts:
+#            - name: env-file
+#              mountPath: /secrets/file.env
+#              subPath: file.env
+        {{- end }}
+      {{- end }}
+      containers:
+#===MAIN CONTAINER======
+        - name: {{ .Values.APP_NAME }}
+          image: {{ $.Values.IMAGE }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            {{- with .Values.backend.securityContext }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ "ALL" ]
+            readOnlyRootFilesystem: false
+            seccompProfile:
+              type: RuntimeDefault
+          {{- with .Values.backend.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            requests:
+              cpu: 150m
+              memory: {{ .Values.MEMORY_REQUEST | default 200 }}Mi
+            limits:
+              cpu: {{ .Values.CPU_LIMIT | default 1600 }}m
+              memory: {{ .Values.MEMORY_LIMIT | default 2048 }}Mi
+          env:
+          - name: APP_NAME
+            value: "{{ .Values.APP_NAME }}"
+          - name: APP_PORT
+            value: "8080"
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.ENV_NAME }}-common-secret
+            - secretRef:
+                name: {{ $.Values.APP_NAME }}-secret
+
+          {{- with .Values.backend.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: web
+              containerPort: {{ .Values.containerPort | default 8080 }}
+              protocol: TCP
+          volumeMounts:
+#            - name: env-file
+#              mountPath: /secrets/file.env
+#              subPath: file.env
+            - name: tmp
+              mountPath: /tmp
+
+          livenessProbe:
+            httpGet: { scheme: HTTP, port: 8080, path: /status }
+            failureThreshold: 5
+            initialDelaySeconds: 7
+            periodSeconds: 15
+            successThreshold: 1
+            timeoutSeconds: 2
+
+          readinessProbe:
+            httpGet: { scheme: HTTP, port: 8080, path: /status }
+            failureThreshold: 3
+            initialDelaySeconds: 8
+            periodSeconds: 15
+            successThreshold: 1
+            timeoutSeconds: 5
+
+          startupProbe:
+            httpGet: { scheme: HTTP, port: 8080, path: /status }
+            failureThreshold: 30
+            periodSeconds: 10    # Итого 300 секунд на миграции и старт
+
+      {{- with .Values.backend.extraContainers }}
+      {{- tpl (toYaml .) $ | nindent 6 }}
+      {{- end }}
+
+#===SIDECAR CONTAINER======
+{{- if .Values.EXTRA_COMMANDS }}
+        - name: {{ .Values.APP_NAME }}-extra
+          image: {{ .Values.IMAGE | quote }}
+          imagePullPolicy: IfNotPresent
+          command: ["sh","-lc"]
+          args:
+            - |
+              set -euo pipefail
+              {{- range $name, $cmd := .Values.EXTRA_COMMANDS }}
+              echo ">>> {{ $name }}"
+              {{ $cmd }}
+              {{- end }}
+              echo "All extra commands done."
+
+          env:
+          - name: APP_NAME
+            value: "{{ .Values.APP_NAME }}"
+          - name: APP_PORT
+            value: "8080"
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.ENV_NAME }}-common-secret
+            - secretRef:
+                name: {{ $.Values.APP_NAME }}-secret
+          resources:
+            requests:
+              cpu: 150m
+              memory: 64Mi
+            limits:
+              cpu: {{ .Values.CPU_LIMIT | default 800 }}m
+              memory: {{ .Values.MEMORY_LIMIT | default 1024 }}Mi
+
+{{- end }}
+      volumes:
+#        - name: env-file
+#          secret:
+#            secretName: {{ .Values.APP_NAME }}-secret
+#            items:
+#              - key: {{ .Values.SECRET_ENV_FILE_KEY | default "file.env" | quote }}
+#                path: file.env
+#                mode: 0440
+        - name: tmp
+          emptyDir: {}
+      {{- if .Values.backend.additionalVolumes }}
+        {{- toYaml .Values.backend.additionalVolumes | nindent 8 }}
+      {{- end }}
+
+# ====>> Add collect logs
+

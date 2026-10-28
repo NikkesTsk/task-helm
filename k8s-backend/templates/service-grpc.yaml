@@ -1,0 +1,18 @@
+{{- $env := default "" .Values.ENV_NAME }}
+{{- if (and .Values.HOST .Values.GRPC_DOC (ne $env "prod")) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.APP_NAME }}-grpc-doc
+  labels:
+    app.kubernetes.io/name: {{ .Values.APP_NAME }}-grpc-doc
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  selector:
+    app: {{ .Values.APP_NAME }}-grpc-doc
+  ports:
+    - name: web
+      port: 8080
+      targetPort: web
+{{- end }}
+

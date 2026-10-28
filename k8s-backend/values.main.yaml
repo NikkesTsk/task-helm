@@ -1,0 +1,11 @@
+frontend:
+  service:
+    annotations: {}
+backend:
+  service:
+    annotations: {}
+certManager:
+  clusterIssuer: {}
+
+#PRESTART:
+#  scheduler:  /app/scheduler

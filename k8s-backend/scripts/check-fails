@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Reference implementation used by the GitLab deployment job.
+# Reports non-ready pods across the namespace. Not limited to one Helm release.
+set -u
+
+namespace="${1:?namespace required}"
+release="${2:?release required}"
+
+echo "================================================================"
+echo " DEPLOY DIAGNOSTICS | namespace=${namespace} release=${release}"
+echo "================================================================"
+
+pods="$(kubectl get pods -n "${namespace}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+
+for pod in ${pods}; do
+    ready="$(kubectl get pod "${pod}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
+    if [[ "${ready}" == "True" ]]; then continue; fi
+
+    echo "================ PROBLEM POD: ${pod} ================"
+    kubectl get pod "${pod}" -n "${namespace}" -o wide || true
+    echo '### CURRENT LOGS'
+    kubectl logs "${pod}" -n "${namespace}" --all-containers=true --tail=300 --prefix=true || true
+    echo '### PREVIOUS LOGS'
+    kubectl logs "${pod}" -n "${namespace}" --all-containers=true --previous --tail=300 --prefix=true || true
+done
+
+echo '================ END DEPLOY DIAGNOSTICS ================'
+exit 10
